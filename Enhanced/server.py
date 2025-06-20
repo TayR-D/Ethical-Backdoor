@@ -1,5 +1,5 @@
 ################################################
-# Author: Watthanasak Jeamwatthanachai, PhD    #
+# Authors: Korn D.,                            #
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
