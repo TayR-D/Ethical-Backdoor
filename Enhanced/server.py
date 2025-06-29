@@ -25,13 +25,13 @@ def reliable_send(data):
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data_len_bytes = s.recv(4)
+    data_len_bytes = target.recv(4)
     if not data_len_bytes:
         return None
     data_len = int.from_bytes(data_len_bytes, 'big')
     data = b''
     while len(data) < data_len:
-        packet = s.recv(data_len - len(data))
+        packet = target.recv(data_len - len(data))
         if not packet:
             return None
         data += packet
