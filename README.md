@@ -8,6 +8,10 @@ This project demonstrates a simple, encrypted client-server backdoor for educati
 
 - `cryptography`
 - `pynput`
+- `mss`
+- `opencv-python (cv2)`
+- `numpy`
+- `pillow (PIL)`
 
 ## Core Features
 
