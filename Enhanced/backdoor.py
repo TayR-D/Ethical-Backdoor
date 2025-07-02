@@ -123,7 +123,7 @@ def stream_audio(sock, flag):
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
-    RATE = 44100
+    RATE = 11025
 
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=CHANNELS,
