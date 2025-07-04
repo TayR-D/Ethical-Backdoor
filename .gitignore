@@ -6,6 +6,8 @@
 venv
 
 # Etc #
+*.png
+*.jp*g
 server.txt
 backdoor.txt
 build/
