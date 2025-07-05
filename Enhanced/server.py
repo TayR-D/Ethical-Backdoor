@@ -11,7 +11,7 @@ import json
 import os
 import ctypes
 from ctypes import c_char_p, c_int, CFUNCTYPE
-#import pyaudio
+import pyaudio
 import threading
 import time
 from cryptography.fernet import Fernet
