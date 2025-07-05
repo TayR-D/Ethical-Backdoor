@@ -243,7 +243,11 @@ Within Client Session:
         info = clients[selected_client]
         sock = info['socket']
         prompt = f"{BOLD}{BLUE}[{info['type']} Client-{selected_client}@{info['address'][0]}]{RESET} {YELLOW}➤{RESET} "
-        cmd = input(prompt).strip()
+        try:
+            cmd = input(prompt).strip()
+        except EOFError:
+            print(f"\n{YELLOW}[!] exiting...{RESET}")
+            os._exit(0)
         if cmd == 'help':
             print(HELP_TEXT)
             continue
@@ -299,7 +303,7 @@ def start_server():
     global client_counter
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    bind_ip, bind_port = '192.168.56.102', 5555
+    bind_ip, bind_port = '192.168.210.1', 5555
     sock.bind((bind_ip, bind_port))
     sock.listen(10)
     print(f"{BOLD}{CYAN}╔═══════════════════════════════════════════════════════════════════╗{RESET}")
