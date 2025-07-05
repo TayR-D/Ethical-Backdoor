@@ -72,7 +72,7 @@ def list_clients():
         print(f"{RED}[-] No active connections{RESET}")
         return
     print(f"\n{BOLD}{CYAN}╔═══════════════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{CYAN}║                   ACTIVE CLIENTS                     ║{RESET}")
+    print(f"{BOLD}{CYAN}║                   ACTIVE CLIENTS                     \t║{RESET}")
     print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
     print(f"{CYAN}║ {'ID':<4}│ {'TYPE':<12}│ {'IP ADDRESS':<18}│ {'STATUS':<10} \t║{RESET}")
     print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
