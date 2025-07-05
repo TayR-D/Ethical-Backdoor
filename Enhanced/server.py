@@ -74,11 +74,11 @@ def list_clients():
     print(f"\n{BOLD}{CYAN}╔═══════════════════════════════════════════════════════╗{RESET}")
     print(f"{BOLD}{CYAN}║                   ACTIVE CLIENTS                     ║{RESET}")
     print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
-    print(f"{CYAN}║ {'ID':<4}│ {'TYPE':<12}│ {'IP ADDRESS':<18}│ {'STATUS':<10} ║{RESET}")
+    print(f"{CYAN}║ {'ID':<4}│ {'TYPE':<12}│ {'IP ADDRESS':<18}│ {'STATUS':<10} \t║{RESET}")
     print(f"{CYAN}╠═══════════════════════════════════════════════════════╣{RESET}")
     for cid, info in clients.items():
         status = f"{GREEN}Connected{RESET}" if info['connected'] else f"{RED}Disconnected{RESET}"
-        print(f"{CYAN}║ {BOLD}{cid:<4}{RESET}{CYAN}│ {info['type']:<12}│ {info['address'][0]:<18}│ {status:<18} ║{RESET}")
+        print(f"{CYAN}║ {BOLD}{cid:<4}{RESET}{CYAN}│ {info['type']:<12}│ {info['address'][0]:<18}│ {status:<18} {CYAN}\t║{RESET}")
     print(f"{CYAN}╚═══════════════════════════════════════════════════════╝{RESET}")
 
 
