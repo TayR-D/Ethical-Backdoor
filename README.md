@@ -17,7 +17,7 @@ This software is provided strictly for educational and research purposes. Unauth
 - `opencv-python (cv2)` — Live screen viewing
 - `numpy` — Image processing
 - `pillow (PIL)` — Image encoding/compression
-- `pyaudio` — Audio streaming
+- `pyaudio` — Audio streaming; May require the manual installation of `portaudio19-dev` beforehand
 
 ---
 
