@@ -1,6 +1,7 @@
 # Compiled source #
 *.exe
 *.spec
+*.ico
 
 # Evironment variables #
 venv
