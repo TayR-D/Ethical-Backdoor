@@ -21,6 +21,14 @@ This software is provided strictly for educational and research purposes. Unauth
 
 ---
 
+## Usage
+
+1. **Start the server** On your C2 system.
+2. **Compile (Optional)** The python file can be compile to `.exe` with `pyinstaller` to adds additional detection evasion using $`pyinstaller --onefile .\Enhanced\backdoor.py -n OutFile.exe --hide-console hide-early [-i .\FileIcon.ico]`
+3. **Deploy the client** (`backdoor.py`) on the target machine.
+
+---
+
 ## Core Features
 
 ### Encrypted Communication
@@ -62,13 +70,5 @@ Uses JSON serialization, chunked transfer, and length-prefixed encrypted message
 ### Multi-Client Support
 
 The server can handle multiple client connections, allowing the operator to select and interact with any active session.
-
----
-
-## Usage
-
-1. **Start the server** On your C2 system.
-2. **Compile (Optional)** The python file can be compile to `.exe` with `pyinstaller` to adds additional detection evasion using $`pyinstaller --onefile .\Enhanced\backdoor.py -n OutFile.exe --hide-console hide-early [-i .\FileIcon.ico]`
-3. **Deploy the client** (`backdoor.py`) on the target machine.
 
 ---
